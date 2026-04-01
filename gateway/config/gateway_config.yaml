@@ -1,0 +1,62 @@
+# Sugarcane Field Gateway Configuration
+# ─────────────────────────────────────
+
+gateway:
+  id: "gateway-01"
+  name: "Field Gateway Alpha"
+  log_level: "INFO"            # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/gateway.log"
+
+# ─── Receiver Settings ───────────────────────────────────────────────────────
+
+receiver:
+  # "lora" for production, "mock" for simulation
+  type: "mock"
+
+  lora:
+    # SPI device on Raspberry Pi
+    spi_bus: 0
+    spi_device: 0
+    # GPIO pins (BCM numbering)
+    pin_cs: 8          # CE0
+    pin_reset: 25
+    pin_dio0: 24
+    # Radio parameters (must match ESP32 config)
+    frequency: 433.0   # MHz
+    bandwidth: 125.0   # kHz
+    spreading_factor: 9
+    coding_rate: 7
+    sync_word: 0x12
+
+  mock:
+    # Interval between simulated packets (seconds)
+    interval: 5
+    # Number of simulated nodes
+    node_count: 3
+
+# ─── Local Storage ───────────────────────────────────────────────────────────
+
+storage:
+  database_path: "data/gateway.db"
+  # Maximum database size before archiving (MB)
+  max_size_mb: 500
+
+# ─── Cloud Upload ────────────────────────────────────────────────────────────
+
+cloud:
+  base_url: "http://localhost:8000"
+  ingest_endpoint: "/telemetry/ingest"
+  # Upload settings
+  batch_size: 10           # Max readings per upload request
+  upload_interval: 30      # Seconds between upload attempts
+  # Retry settings
+  max_retries: 5
+  retry_base_delay: 2      # Base delay in seconds
+  retry_max_delay: 300     # Maximum delay in seconds (5 minutes)
+  request_timeout: 15      # HTTP request timeout in seconds
+
+# ─── Health Monitoring ───────────────────────────────────────────────────────
+
+health:
+  check_interval: 60       # Seconds between health checks
+  stale_node_threshold: 300 # Seconds before a node is considered stale

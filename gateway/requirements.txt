@@ -1,0 +1,5 @@
+# Raspberry Pi Gateway
+pyyaml>=6.0
+requests>=2.31.0
+# spidev>=3.6       # Uncomment on Raspberry Pi for LoRa SPI
+# RPi.GPIO>=0.7.1   # Uncomment on Raspberry Pi for GPIO
