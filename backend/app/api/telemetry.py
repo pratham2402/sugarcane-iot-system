@@ -3,6 +3,8 @@ Telemetry ingestion API endpoints.
 """
 
 import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Request, HTTPException
 from ..models.schemas import (
     TelemetryIngestRequest,
@@ -22,7 +24,16 @@ async def ingest_telemetry(reading: TelemetryIngestRequest, request: Request):
 
     Accepts the full-format telemetry payload. Duplicates (same node_id
     and timestamp) are silently ignored.
+
+    NOTE: ESP32 firmware sends millis()/1000 as timestamp (seconds since boot,
+    NOT real Unix time). We override with the server's actual UTC time on
+    receipt so storage and PWA display work correctly without ESP32-side NTP.
     """
+
+    # ✅ Override ESP32 timestamp (Pydantic-safe)
+    server_ts = int(datetime.now(timezone.utc).timestamp())
+    reading = reading.model_copy(update={"timestamp": server_ts})
+
     repo = request.app.state.repository
 
     try:
@@ -61,12 +72,27 @@ async def ingest_batch(batch: BatchIngestRequest, request: Request):
     """
     Ingest a batch of telemetry readings.
 
-    Accepts multiple readings in a single request for efficiency.
-    Each reading is processed independently — partial success is possible.
+    Each reading's timestamp is overridden with server time on receipt,
+    spaced 1 second apart to preserve ordering within the batch.
     """
+
     repo = request.app.state.repository
 
     try:
+        # ✅ Override timestamps for batch (ordered spacing)
+        server_ts = int(datetime.now(timezone.utc).timestamp())
+
+        new_readings = [
+            r.model_copy(
+                update={
+                    "timestamp": server_ts - (len(batch.readings) - i - 1)
+                }
+            )
+            for i, r in enumerate(batch.readings)
+        ]
+
+        batch = batch.model_copy(update={"readings": new_readings})
+
         ingested, duplicates = repo.ingest_batch(batch.readings)
 
         logger.info(

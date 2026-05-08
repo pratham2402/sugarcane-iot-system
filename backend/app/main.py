@@ -7,15 +7,22 @@ Sugarcane Field Monitoring — Cloud Backend
 import os
 import sys
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 import yaml
 import uvicorn
-from fastapi import FastAPI
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env from backend root (one level up from app/) BEFORE importing routes
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 from .db.connection import DatabaseConnection
 from .db.repository import TelemetryRepository
-from .api import health, telemetry, nodes, readings
+from .api import health, telemetry, nodes, readings, yield_prediction, anomalies, valve , weather
+from .auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +51,6 @@ def load_config(config_path: str = "config/backend_config.yaml") -> dict:
 def create_app(config: dict = None) -> FastAPI:
     """
     Create and configure the FastAPI application.
-
-    Args:
-        config: Optional configuration dict. If None, loads from file.
     """
     if config is None:
         config = load_config()
@@ -60,7 +64,15 @@ def create_app(config: dict = None) -> FastAPI:
         # Startup
         conn = db_conn.connect()
         app.state.repository = TelemetryRepository(conn)
-        logger.info("Backend started — database connected")
+
+        # Log auth mode at startup so it's obvious in logs
+        if os.getenv("BACKEND_API_TOKEN", "").strip():
+            print("Bearer-token auth: ENABLED (non-localhost requests need token)", flush=True)
+        else:
+            print("Bearer-token auth: DISABLED (BACKEND_API_TOKEN not set)", flush=True)
+
+        print("Backend started — database connected", flush=True)
+
         yield
         # Shutdown
         db_conn.close()
@@ -77,12 +89,30 @@ def create_app(config: dict = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*", "Authorization"],
+    )
+
     # ─── Register Routes ─────────────────────────────────────────────────────
 
+    # Open routes (no token required)
+    #   /health         — used by PWA "test connection" button before token is set
+    #   /telemetry/*    — ESP32 doesn't have token support yet (future work)
     app.include_router(health.router)
     app.include_router(telemetry.router)
-    app.include_router(nodes.router)
-    app.include_router(readings.router)
+
+    # Auth-gated routes (token required when BACKEND_API_TOKEN is set,
+    # except for localhost requests which are always allowed for the agent)
+    app.include_router(nodes.router,            dependencies=[Depends(verify_token)])
+    app.include_router(readings.router,         dependencies=[Depends(verify_token)])
+    app.include_router(yield_prediction.router, dependencies=[Depends(verify_token)])
+    app.include_router(anomalies.router,        dependencies=[Depends(verify_token)])
+    app.include_router(valve.router,            dependencies=[Depends(verify_token)])
+    app.include_router(weather.router,          dependencies=[Depends(verify_token)])
 
     return app
 
@@ -117,3 +147,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Module-level `app` so `uvicorn app.main:app` keeps working
+app = create_app()

@@ -63,3 +63,7 @@ desktop.ini
 *.bak
 *.tmp
 *.temp
+
+# Linux installer, too large for git
+cloudflared.deb
+*.deb
